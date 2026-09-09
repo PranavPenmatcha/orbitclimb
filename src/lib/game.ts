@@ -3,6 +3,11 @@
  * answer, and finishing a round. This is the sole place scoring happens —
  * never trust a client-computed score. See src/app/api/round/* for the
  * HTTP surface over these functions.
+ *
+ * Every exported function here is async because the db layer (libSQL) is
+ * always async — local dev talks to a file over the same async client used
+ * against hosted Turso in production, so there's no sync/async split to
+ * maintain between environments.
  */
 import { randomUUID } from 'node:crypto';
 import { getDb } from './db';
@@ -28,12 +33,13 @@ function getIndex(category: CategoryId) {
   return idx;
 }
 
-export function ensurePlayer(playerId: string, nickname: string): void {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO players (id, nickname) VALUES (?, ?)
-     ON CONFLICT(id) DO UPDATE SET nickname = excluded.nickname`
-  ).run(playerId, nickname);
+export async function ensurePlayer(playerId: string, nickname: string): Promise<void> {
+  const db = await getDb();
+  await db.execute({
+    sql: `INSERT INTO players (id, nickname) VALUES (?, ?)
+          ON CONFLICT(id) DO UPDATE SET nickname = excluded.nickname`,
+    args: [playerId, nickname],
+  });
 }
 
 export interface StartRoundResult {
@@ -45,16 +51,21 @@ export interface StartRoundResult {
   timePerPromptMs: number;
 }
 
-export function startRound(playerId: string, category: CategoryId, mode: 'daily' | 'unlimited'): StartRoundResult {
-  const db = getDb();
+export async function startRound(
+  playerId: string,
+  category: CategoryId,
+  mode: 'daily' | 'unlimited'
+): Promise<StartRoundResult> {
+  const db = await getDb();
   const allPrompts = PROMPT_SETS[category];
   const puzzleDate = mode === 'daily' ? currentPuzzleDateET() : null;
 
   if (mode === 'daily' && puzzleDate) {
-    const already = db
-      .prepare(`SELECT 1 FROM daily_results WHERE player_id = ? AND category_id = ? AND puzzle_date = ?`)
-      .get(playerId, category, puzzleDate);
-    if (already) {
+    const already = await db.execute({
+      sql: `SELECT 1 FROM daily_results WHERE player_id = ? AND category_id = ? AND puzzle_date = ?`,
+      args: [playerId, category, puzzleDate],
+    });
+    if (already.rows.length > 0) {
       throw new Error('ALREADY_PLAYED_TODAY');
     }
   }
@@ -63,10 +74,11 @@ export function startRound(playerId: string, category: CategoryId, mode: 'daily'
   const prompts = selectPrompts(allPrompts, seed, PROMPTS_PER_ROUND);
   const roundId = randomUUID();
 
-  db.prepare(
-    `INSERT INTO rounds (id, player_id, category_id, mode, puzzle_date, seed, prompt_ids)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(roundId, playerId, category, mode, puzzleDate, seed, JSON.stringify(prompts.map((p) => p.id)));
+  await db.execute({
+    sql: `INSERT INTO rounds (id, player_id, category_id, mode, puzzle_date, seed, prompt_ids)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [roundId, playerId, category, mode, puzzleDate, seed, JSON.stringify(prompts.map((p) => p.id))],
+  });
 
   return {
     roundId,
@@ -91,9 +103,10 @@ interface RoundRow {
   total_score: number;
 }
 
-function loadRound(roundId: string): RoundRow {
-  const db = getDb();
-  const row = db.prepare(`SELECT * FROM rounds WHERE id = ?`).get(roundId) as RoundRow | undefined;
+async function loadRound(roundId: string): Promise<RoundRow> {
+  const db = await getDb();
+  const result = await db.execute({ sql: `SELECT * FROM rounds WHERE id = ?`, args: [roundId] });
+  const row = result.rows[0] as unknown as RoundRow | undefined;
   if (!row) throw new Error('ROUND_NOT_FOUND');
   return row;
 }
@@ -123,23 +136,24 @@ export interface AnswerResult {
  * started_at plus how many prompts have already been answered, so a
  * tampered client timer can't extend the real time budget.
  */
-export function submitAnswer(
+export async function submitAnswer(
   roundId: string,
   promptIndex: number,
   rawInput: string,
   clientElapsedMs: number
-): AnswerResult {
-  const db = getDb();
-  const round = loadRound(roundId);
+): Promise<AnswerResult> {
+  const db = await getDb();
+  const round = await loadRound(roundId);
   if (round.completed_at) throw new Error('ROUND_ALREADY_COMPLETE');
 
   const promptIds: string[] = JSON.parse(round.prompt_ids);
   if (promptIndex < 0 || promptIndex >= promptIds.length) throw new Error('BAD_PROMPT_INDEX');
 
-  const already = db
-    .prepare(`SELECT 1 FROM round_answers WHERE round_id = ? AND prompt_index = ?`)
-    .get(roundId, promptIndex);
-  if (already) throw new Error('PROMPT_ALREADY_ANSWERED');
+  const already = await db.execute({
+    sql: `SELECT 1 FROM round_answers WHERE round_id = ? AND prompt_index = ?`,
+    args: [roundId, promptIndex],
+  });
+  if (already.rows.length > 0) throw new Error('PROMPT_ALREADY_ANSWERED');
 
   const promptId = promptIds[promptIndex] as string;
   const prompt = findPrompt(round.category_id, promptId);
@@ -166,28 +180,33 @@ export function submitAnswer(
     const seedShares = seededSharesForPrompt(validAnswers);
     const seedShare = seedShares.get(match.answer.id) ?? 0;
 
-    const totalRow = db.prepare(`SELECT total FROM prompt_totals WHERE prompt_id = ?`).get(promptId) as
-      | { total: number }
-      | undefined;
-    const countRow = db
-      .prepare(`SELECT count FROM answer_counts WHERE prompt_id = ? AND answer_id = ?`)
-      .get(promptId, match.answer.id) as { count: number } | undefined;
+    const [totalResult, countResult] = await Promise.all([
+      db.execute({ sql: `SELECT total FROM prompt_totals WHERE prompt_id = ?`, args: [promptId] }),
+      db.execute({
+        sql: `SELECT count FROM answer_counts WHERE prompt_id = ? AND answer_id = ?`,
+        args: [promptId, match.answer.id],
+      }),
+    ]);
+    const livePromptTotal = (totalResult.rows[0]?.total as number | undefined) ?? 0;
+    const liveCount = (countResult.rows[0]?.count as number | undefined) ?? 0;
 
-    const livePromptTotal = totalRow?.total ?? 0;
-    const liveCount = countRow?.count ?? 0;
     const share = blendedShare(seedShare, liveCount, livePromptTotal);
     sharePercent = share;
     tier = tierForShare(share);
 
     // record the submission into the live rarity tables
-    db.prepare(
-      `INSERT INTO answer_counts (prompt_id, answer_id, count) VALUES (?, ?, 1)
-       ON CONFLICT(prompt_id, answer_id) DO UPDATE SET count = count + 1`
-    ).run(promptId, match.answer.id);
-    db.prepare(
-      `INSERT INTO prompt_totals (prompt_id, total) VALUES (?, 1)
-       ON CONFLICT(prompt_id) DO UPDATE SET total = total + 1`
-    ).run(promptId);
+    await Promise.all([
+      db.execute({
+        sql: `INSERT INTO answer_counts (prompt_id, answer_id, count) VALUES (?, ?, 1)
+              ON CONFLICT(prompt_id, answer_id) DO UPDATE SET count = count + 1`,
+        args: [promptId, match.answer.id],
+      }),
+      db.execute({
+        sql: `INSERT INTO prompt_totals (prompt_id, total) VALUES (?, 1)
+              ON CONFLICT(prompt_id) DO UPDATE SET total = total + 1`,
+        args: [promptId],
+      }),
+    ]);
   } else if (match.kind === 'invalid' && match.reason === 'wrong-tag') {
     feedback = `${match.answer.name} doesn't fit — try again next time.`;
   } else if (expired) {
@@ -196,27 +215,29 @@ export function submitAnswer(
     feedback = "That doesn't match anything in this category.";
   }
 
-  db.prepare(
-    `INSERT INTO round_answers
-       (round_id, prompt_index, prompt_id, raw_input, answer_id, valid, corrected, tier, points, share, ms_taken)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    roundId,
-    promptIndex,
-    promptId,
-    rawInput.slice(0, 200),
-    match.kind === 'valid' ? match.answer.id : null,
-    match.kind === 'valid' ? 1 : 0,
-    corrected ? 1 : 0,
-    tier.name,
-    tier.points,
-    sharePercent,
-    msTaken
-  );
+  await db.execute({
+    sql: `INSERT INTO round_answers
+            (round_id, prompt_index, prompt_id, raw_input, answer_id, valid, corrected, tier, points, share, ms_taken)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      roundId,
+      promptIndex,
+      promptId,
+      rawInput.slice(0, 200),
+      match.kind === 'valid' ? match.answer.id : null,
+      match.kind === 'valid' ? 1 : 0,
+      corrected ? 1 : 0,
+      tier.name,
+      tier.points,
+      sharePercent,
+      msTaken,
+    ],
+  });
 
-  const cumulative = db
-    .prepare(`SELECT COALESCE(SUM(points), 0) as total FROM round_answers WHERE round_id = ?`)
-    .get(roundId) as { total: number };
+  const cumulative = await db.execute({
+    sql: `SELECT COALESCE(SUM(points), 0) as total FROM round_answers WHERE round_id = ?`,
+    args: [roundId],
+  });
 
   return {
     promptIndex,
@@ -228,7 +249,7 @@ export function submitAnswer(
     tierLabel: tier.label,
     points: tier.points,
     sharePercent,
-    cumulativeScore: cumulative.total,
+    cumulativeScore: Number(cumulative.rows[0]?.total ?? 0),
   };
 }
 
@@ -258,15 +279,17 @@ function rareExamplesFor(prompt: Prompt, excludeAnswerId: string | null): string
     .map((a) => a.name);
 }
 
-export function finishRound(roundId: string, nickname: string): FinishRoundResult {
-  const db = getDb();
-  const round = loadRound(roundId);
+export async function finishRound(roundId: string, nickname: string): Promise<FinishRoundResult> {
+  const db = await getDb();
+  const round = await loadRound(roundId);
   if (round.completed_at) throw new Error('ROUND_ALREADY_COMPLETE');
 
   const promptIds: string[] = JSON.parse(round.prompt_ids);
-  const answers = db
-    .prepare(`SELECT * FROM round_answers WHERE round_id = ? ORDER BY prompt_index ASC`)
-    .all(roundId) as Array<{
+  const result = await db.execute({
+    sql: `SELECT * FROM round_answers WHERE round_id = ? ORDER BY prompt_index ASC`,
+    args: [roundId],
+  });
+  const answers = result.rows as unknown as Array<{
     prompt_index: number;
     prompt_id: string;
     tier: string;
@@ -297,19 +320,20 @@ export function finishRound(roundId: string, nickname: string): FinishRoundResul
     };
   });
 
-  db.prepare(`UPDATE rounds SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), total_score = ? WHERE id = ?`).run(
-    totalScore,
-    roundId
-  );
+  await db.execute({
+    sql: `UPDATE rounds SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), total_score = ? WHERE id = ?`,
+    args: [totalScore, roundId],
+  });
 
   let isNewDailyResult = false;
   if (round.mode === 'daily' && round.puzzle_date) {
-    ensurePlayer(round.player_id, nickname);
-    db.prepare(
-      `INSERT INTO daily_results (player_id, category_id, puzzle_date, round_id, total_score, nickname)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(player_id, category_id, puzzle_date) DO NOTHING`
-    ).run(round.player_id, round.category_id, round.puzzle_date, roundId, totalScore, nickname);
+    await ensurePlayer(round.player_id, nickname);
+    await db.execute({
+      sql: `INSERT INTO daily_results (player_id, category_id, puzzle_date, round_id, total_score, nickname)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, category_id, puzzle_date) DO NOTHING`,
+      args: [round.player_id, round.category_id, round.puzzle_date, roundId, totalScore, nickname],
+    });
     isNewDailyResult = true;
   }
 

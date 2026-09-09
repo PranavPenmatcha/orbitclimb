@@ -12,13 +12,13 @@ function addDaysET(dateStr: string, delta: number): string {
 }
 
 /** Current consecutive-day streak for a player in a category, counting back from today (or yesterday, if today isn't played yet). */
-export function currentStreak(playerId: string, categoryId: CategoryId): number {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT puzzle_date FROM daily_results WHERE player_id = ? AND category_id = ? ORDER BY puzzle_date DESC`
-    )
-    .all(playerId, categoryId) as Array<{ puzzle_date: string }>;
+export async function currentStreak(playerId: string, categoryId: CategoryId): Promise<number> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT puzzle_date FROM daily_results WHERE player_id = ? AND category_id = ? ORDER BY puzzle_date DESC`,
+    args: [playerId, categoryId],
+  });
+  const rows = result.rows as unknown as Array<{ puzzle_date: string }>;
   if (rows.length === 0) return 0;
 
   const today = currentPuzzleDateET();
@@ -35,11 +35,12 @@ export function currentStreak(playerId: string, categoryId: CategoryId): number 
   return streak;
 }
 
-export function hasPlayedToday(playerId: string, categoryId: CategoryId): boolean {
-  const db = getDb();
+export async function hasPlayedToday(playerId: string, categoryId: CategoryId): Promise<boolean> {
+  const db = await getDb();
   const today = currentPuzzleDateET();
-  const row = db
-    .prepare(`SELECT 1 FROM daily_results WHERE player_id = ? AND category_id = ? AND puzzle_date = ?`)
-    .get(playerId, categoryId, today);
-  return !!row;
+  const result = await db.execute({
+    sql: `SELECT 1 FROM daily_results WHERE player_id = ? AND category_id = ? AND puzzle_date = ?`,
+    args: [playerId, categoryId, today],
+  });
+  return result.rows.length > 0;
 }

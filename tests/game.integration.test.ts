@@ -35,16 +35,16 @@ afterAll(() => {
   }
 });
 
-describe('full round flow against a real SQLite db', () => {
-  it('scores a valid answer, an invalid answer, and completes a round', () => {
+describe('full round flow against a real libSQL db', () => {
+  it('scores a valid answer, an invalid answer, and completes a round', async () => {
     const playerId = 'test-player-1';
-    ensurePlayer(playerId, 'Tester');
+    await ensurePlayer(playerId, 'Tester');
 
-    const round = startRound(playerId, 'animals', 'unlimited');
+    const round = await startRound(playerId, 'animals', 'unlimited');
     expect(round.promptIds).toHaveLength(7);
 
     // answer prompt 0 with obvious nonsense -> invalid, 0 points
-    const bad = submitAnswer(round.roundId, 0, 'zzzznotarealanimalzzzz', 5000);
+    const bad = await submitAnswer(round.roundId, 0, 'zzzznotarealanimalzzzz', 5000);
     expect(bad.valid).toBe(false);
     expect(bad.points).toBe(0);
 
@@ -52,47 +52,47 @@ describe('full round flow against a real SQLite db', () => {
     // since prompts are randomized we just verify the pipeline doesn't throw
     // and produces a cumulative score.
     for (let i = 1; i < 7; i++) {
-      const res = submitAnswer(round.roundId, i, 'asdkfjasldkfj', 5000);
+      const res = await submitAnswer(round.roundId, i, 'asdkfjasldkfj', 5000);
       expect(res.valid).toBe(false);
       expect(res.cumulativeScore).toBeGreaterThanOrEqual(0);
     }
 
-    const finished = finishRound(round.roundId, 'Tester');
+    const finished = await finishRound(round.roundId, 'Tester');
     expect(finished.totalScore).toBe(0); // all 7 were nonsense
     expect(finished.breakdown).toHaveLength(7);
   });
 
-  it('rejects answering the same prompt index twice', () => {
+  it('rejects answering the same prompt index twice', async () => {
     const playerId = 'test-player-2';
-    ensurePlayer(playerId, 'Tester2');
-    const round = startRound(playerId, 'animals', 'unlimited');
-    submitAnswer(round.roundId, 0, 'dolphin', 5000);
-    expect(() => submitAnswer(round.roundId, 0, 'dolphin', 5000)).toThrow();
+    await ensurePlayer(playerId, 'Tester2');
+    const round = await startRound(playerId, 'animals', 'unlimited');
+    await submitAnswer(round.roundId, 0, 'dolphin', 5000);
+    await expect(submitAnswer(round.roundId, 0, 'dolphin', 5000)).rejects.toThrow();
   });
 
-  it('rejects an expired timer even with a valid answer', () => {
+  it('rejects an expired timer even with a valid answer', async () => {
     const playerId = 'test-player-3';
-    ensurePlayer(playerId, 'Tester3');
-    const round = startRound(playerId, 'animals', 'unlimited');
-    const result = submitAnswer(round.roundId, 0, 'Lion', 25000); // over the 20s budget
+    await ensurePlayer(playerId, 'Tester3');
+    const round = await startRound(playerId, 'animals', 'unlimited');
+    const result = await submitAnswer(round.roundId, 0, 'Lion', 25000); // over the 20s budget
     expect(result.valid).toBe(false);
   });
 
-  it('degrades tier as live submissions for the same answer accumulate (proves blending is wired up)', () => {
+  it('degrades tier as live submissions for the same answer accumulate (proves blending is wired up)', async () => {
     const category = 'animals' as const;
 
-    // Drive many rounds all answering "Dolphin" for the ocean-mammal prompt
+    // Drive many rounds all answering "Dolphin" for the ocean prompt
     // specifically, so its live share climbs and its tier gets worse.
     const promptId = 'animals.ocean';
     const results: number[] = [];
 
     for (let i = 0; i < 60; i++) {
       const playerId = `blend-player-${i}`;
-      ensurePlayer(playerId, `Blend${i}`);
-      const round = startRound(playerId, category, 'unlimited');
+      await ensurePlayer(playerId, `Blend${i}`);
+      const round = await startRound(playerId, category, 'unlimited');
       const idx = round.promptIds.indexOf(promptId);
       if (idx === -1) continue; // this random round didn't include our target prompt, skip
-      const res = submitAnswer(round.roundId, idx, 'Dolphin', 5000);
+      const res = await submitAnswer(round.roundId, idx, 'Dolphin', 5000);
       if (res.valid) results.push(res.points);
     }
 
@@ -104,21 +104,23 @@ describe('full round flow against a real SQLite db', () => {
     expect(last).toBeLessThanOrEqual(first);
 
     // and the raw counter really did increment in the db
-    const db = getDb();
-    const row = db
-      .prepare(`SELECT count FROM answer_counts WHERE prompt_id = ? AND answer_id = 'dolphin'`)
-      .get(promptId) as { count: number } | undefined;
+    const db = await getDb();
+    const result = await db.execute({
+      sql: `SELECT count FROM answer_counts WHERE prompt_id = ? AND answer_id = 'dolphin'`,
+      args: [promptId],
+    });
+    const row = result.rows[0] as unknown as { count: number } | undefined;
     expect(row?.count).toBeGreaterThan(0);
   });
 
-  it('includes rare-answer examples in the finish breakdown, excluding the player\'s own pick', () => {
+  it("includes rare-answer examples in the finish breakdown, excluding the player's own pick", async () => {
     const playerId = 'test-player-reveal';
-    ensurePlayer(playerId, 'RevealTester');
-    const round = startRound(playerId, 'animals', 'unlimited');
+    await ensurePlayer(playerId, 'RevealTester');
+    const round = await startRound(playerId, 'animals', 'unlimited');
     for (let i = 0; i < 7; i++) {
-      submitAnswer(round.roundId, i, 'Dog', 5000); // a common, valid-ish answer for many animal prompts
+      await submitAnswer(round.roundId, i, 'Dog', 5000); // a common, valid-ish answer for many animal prompts
     }
-    const finished = finishRound(round.roundId, 'RevealTester');
+    const finished = await finishRound(round.roundId, 'RevealTester');
     expect(finished.breakdown).toHaveLength(7);
     for (const entry of finished.breakdown) {
       expect(Array.isArray(entry.rareExamples)).toBe(true);
@@ -130,14 +132,14 @@ describe('full round flow against a real SQLite db', () => {
     }
   });
 
-  it('blocks replaying a completed daily puzzle', () => {
+  it('blocks replaying a completed daily puzzle', async () => {
     const playerId = 'test-player-daily';
-    ensurePlayer(playerId, 'DailyTester');
-    const round = startRound(playerId, 'movies', 'daily');
+    await ensurePlayer(playerId, 'DailyTester');
+    const round = await startRound(playerId, 'movies', 'daily');
     for (let i = 0; i < 7; i++) {
-      submitAnswer(round.roundId, i, 'nonsense', 5000);
+      await submitAnswer(round.roundId, i, 'nonsense', 5000);
     }
-    finishRound(round.roundId, 'DailyTester');
-    expect(() => startRound(playerId, 'movies', 'daily')).toThrow('ALREADY_PLAYED_TODAY');
+    await finishRound(round.roundId, 'DailyTester');
+    await expect(startRound(playerId, 'movies', 'daily')).rejects.toThrow('ALREADY_PLAYED_TODAY');
   });
 });

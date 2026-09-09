@@ -6,11 +6,13 @@ import type { CategoryId } from '@/lib/types';
 export async function GET(req: NextRequest) {
   const playerId = req.nextUrl.searchParams.get('playerId');
 
-  const categories = CATEGORIES.map((c) => ({
-    ...c,
-    streak: playerId ? currentStreak(playerId, c.id as CategoryId) : 0,
-    playedToday: playerId ? hasPlayedToday(playerId, c.id as CategoryId) : false,
-  }));
+  const categories = await Promise.all(
+    CATEGORIES.map(async (c) => ({
+      ...c,
+      streak: playerId ? await currentStreak(playerId, c.id as CategoryId) : 0,
+      playedToday: playerId ? await hasPlayedToday(playerId, c.id as CategoryId) : false,
+    }))
+  );
 
   return NextResponse.json({ categories });
 }

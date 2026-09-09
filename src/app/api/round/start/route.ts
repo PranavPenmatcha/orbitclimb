@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    ensurePlayer(playerId, (nickname ?? 'Anonymous').slice(0, 40));
-    const result = startRound(playerId, category, mode);
+    await ensurePlayer(playerId, (nickname ?? 'Anonymous').slice(0, 40));
+    const result = await startRound(playerId, category, mode);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'UNKNOWN_ERROR';

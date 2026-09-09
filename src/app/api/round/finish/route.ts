@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = finishRound(roundId, (nickname ?? 'Anonymous').slice(0, 40));
+    const result = await finishRound(roundId, (nickname ?? 'Anonymous').slice(0, 40));
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'UNKNOWN_ERROR';

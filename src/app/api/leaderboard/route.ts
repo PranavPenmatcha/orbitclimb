@@ -11,16 +11,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'INVALID_CATEGORY' }, { status: 400 });
   }
 
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT nickname, total_score, player_id
-       FROM daily_results
-       WHERE category_id = ? AND puzzle_date = ?
-       ORDER BY total_score DESC
-       LIMIT 50`
-    )
-    .all(category, date) as Array<{ nickname: string; total_score: number; player_id: string }>;
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT nickname, total_score, player_id
+          FROM daily_results
+          WHERE category_id = ? AND puzzle_date = ?
+          ORDER BY total_score DESC
+          LIMIT 50`,
+    args: [category, date],
+  });
+  const rows = result.rows as unknown as Array<{ nickname: string; total_score: number; player_id: string }>;
 
   return NextResponse.json({
     category,

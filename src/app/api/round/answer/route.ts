@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const elapsed = typeof elapsedMs === 'number' && elapsedMs >= 0 ? elapsedMs : 0;
 
   try {
-    const result = submitAnswer(roundId, promptIndex, input.slice(0, 200), elapsed);
+    const result = await submitAnswer(roundId, promptIndex, input.slice(0, 200), elapsed);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'UNKNOWN_ERROR';

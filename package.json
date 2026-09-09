@@ -8,17 +8,15 @@
     "start": "next start -p 3311",
     "test": "vitest run",
     "test:watch": "vitest",
-    "validate-data": "tsx scripts/validate-data.ts",
-    "seed": "tsx scripts/seed-history.ts"
+    "validate-data": "tsx scripts/validate-data.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
+    "@libsql/client": "^0.18.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
