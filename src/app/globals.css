@@ -1,0 +1,66 @@
+:root {
+  --void: #05060f;
+  --panel: #0d1030;
+  --panel-raised: #131a4a;
+  --nebula: #4c2a85;
+  --cyan: #38e8ff;
+  --magenta: #ff4fa3;
+  --star: #eaf0ff;
+  --dim: #7f8bb5;
+  --border: #262c5c;
+
+  --tier-deep-space: #ff4fa3;
+  --tier-orbital: #b45cff;
+  --tier-karman: #6f8dff;
+  --tier-stratosphere: #38e8ff;
+  --tier-contrail: #4ce6b0;
+  --tier-launchpad: #8892b8;
+  --tier-failed: #4a4f78;
+
+  --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--void);
+  color: var(--star);
+}
+
+body {
+  font-family: var(--font-display);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--magenta);
+  color: var(--void);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
