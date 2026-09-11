@@ -37,9 +37,6 @@ export default function HomePage() {
       }}
     >
       <header style={{ textAlign: 'center', marginBottom: 56 }}>
-        <div className="mono" style={{ color: 'var(--cyan)', fontSize: 13, letterSpacing: '0.35em', marginBottom: 12 }}>
-          MISSION CONTROL
-        </div>
         <h1
           style={{
             fontSize: 'clamp(40px, 8vw, 72px)',
@@ -52,7 +49,7 @@ export default function HomePage() {
             margin: 0,
           }}
         >
-          ORBIT
+          ORBITCLIMB
         </h1>
         <p style={{ color: 'var(--dim)', fontSize: 17, marginTop: 12, maxWidth: 520 }}>
           Pick a category. Seven prompts, same for everyone today. Rare answers send you higher —
