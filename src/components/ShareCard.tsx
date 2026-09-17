@@ -22,7 +22,7 @@ interface Props {
 
 function buildShareText({ categoryName, puzzleDate, points, totalScore }: Props): string {
   const bars = points.map((p) => BAR_BY_POINTS[p] ?? '·').join('');
-  const label = puzzleDate ? `ORBIT · ${categoryName} · ${puzzleDate}` : `ORBIT · ${categoryName} · Unlimited`;
+  const label = puzzleDate ? `ORBITCLIMB · ${categoryName} · ${puzzleDate}` : `ORBITCLIMB · ${categoryName} · Unlimited`;
   return `${label}\n${bars}   ${totalScore} km`;
 }
 

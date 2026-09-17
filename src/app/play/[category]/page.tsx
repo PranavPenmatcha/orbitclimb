@@ -196,7 +196,7 @@ export default function PlayPage() {
             </a>
           </>
         ) : (
-          <p>Something went wrong. <a href="/" style={{ color: 'var(--cyan)' }}>Back to Mission Control</a></p>
+          <p>Something went wrong. <a href="/" style={{ color: 'var(--cyan)' }}>Back to Home</a></p>
         )}
       </CenteredMessage>
     );

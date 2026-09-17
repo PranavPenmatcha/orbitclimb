@@ -84,7 +84,7 @@ export default function ResultsPage() {
       <Centered>
         <p>No result found for this round (maybe the page was reloaded).</p>
         <Link href="/" style={{ color: 'var(--cyan)' }}>
-          Back to Mission Control
+          Back to Home
         </Link>
       </Centered>
     );
@@ -190,7 +190,7 @@ export default function ResultsPage() {
 
       <div style={{ display: 'flex', gap: 16 }}>
         <Link href="/" className="mono" style={{ color: 'var(--dim)', fontSize: 13 }}>
-          ← Mission Control
+          ← Home
         </Link>
         <Link href={`/play/${result.category}?mode=unlimited`} className="mono" style={{ color: 'var(--cyan)', fontSize: 13 }}>
           Play Unlimited →

@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'ORBIT — Daily Rarity Game',
+  title: 'ORBITCLIMB',
   description: 'Pick a category. Answer rare, climb higher. Seven prompts a day, ranked by how few players said what you said.',
 };
 
