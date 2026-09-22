@@ -1,6 +1,6 @@
 # ORBIT
 
-A daily rarity game: pick a category, name something in it, and score based on how *few* other players named the same thing. Inspired by [krillion.io](https://krillion.io/), rebuilt from scratch with your own category system, scoring model, and a deep-space visual identity instead of Krillion's ocean-dive theme.
+A daily rarity game: pick a category, name something in it, and score based on how *few* other players named the same thing. 
 
 **Live:** https://orbitclimb.vercel.app
 
